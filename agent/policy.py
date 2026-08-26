@@ -2,25 +2,10 @@
 
 Cổng chặn TRƯỚC KHI tool thật sự execute. Đọc Guide.md (§3b).
 
-Interface bắt buộc (tests/test_policy.py và agent/runner.py gọi trực tiếp):
-
+Interface bắt buộc:
     check(context: PolicyContext) -> tuple[bool, str]
         Trả về (allow, reason).
-        `reason` KHÔNG BAO GIỜ được để trống — cả khi allow=True và
-        allow=False. Đây là evidence audit ở Bước 4 (rubric: "Audit
-        completeness = 100%" — điều kiện trượt nếu có dòng thiếu reason).
-
-PolicyContext — 5 input đúng slide §3.3 (đã định nghĩa sẵn, đừng đổi field):
-
-    data_classification: str   "public" | "internal" | "restricted"
-    request_purpose: str       tự do, ví dụ "reconciliation", "support-reply"
-    agent_owner: str            định danh agent/run gọi tool này
-    delegation_depth: int       0 = gọi trực tiếp bởi user, >0 = agent gọi agent
-    egress_enabled: bool        run hiện tại có được phép gọi network không
-
-Rule TỐI THIỂU bắt buộc (không được viết yếu hơn rule này):
-
-    classification == "restricted" and egress_enabled is True  ->  DENY
+        `reason` KHÔNG BAO GIỜ được để trống — cả khi allow=True và allow=False.
 """
 from __future__ import annotations
 
@@ -29,12 +14,32 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class PolicyContext:
-    data_classification: str
-    request_purpose: str
-    agent_owner: str
-    delegation_depth: int
-    egress_enabled: bool
+    data_classification: str  # "public" | "internal" | "restricted"
+    request_purpose: str      # ví dụ "reconciliation", "summarize-tickets"
+    agent_owner: str          # định danh agent/run gọi tool
+    delegation_depth: int     # 0 = trực tiếp, >0 = qua delegation
+    egress_enabled: bool      # có quyền gọi network hay không
 
 
 def check(context: PolicyContext) -> tuple[bool, str]:
-    raise NotImplementedError("BƯỚC 3b: implement policy check")
+    """Kiểm tra chính sách bảo mật trước khi thực thi tool.
+    
+    Quy tắc tối thiểu bắt buộc:
+    - data_classification == 'restricted' and egress_enabled is True -> DENY
+    - Mọi quyết định (Allow hay Deny) đều phải kèm reason chi tiết.
+    """
+    # Rule 1: Chặn gửi dữ liệu nhạy cảm (restricted) ra ngoài mạng (egress)
+    if context.data_classification == "restricted" and context.egress_enabled:
+        return (
+            False,
+            f"Từ chối quyền egress cho dữ liệu '{context.data_classification}' "
+            f"(agent: {context.agent_owner}, purpose: {context.request_purpose})"
+        )
+
+    # Rule 2: Cho phép các thao tác nội bộ hợp lệ
+    return (
+        True,
+        f"Chấp thuận thao tác hợp lệ cho agent '{context.agent_owner}' "
+        f"(classification: {context.data_classification}, egress: {context.egress_enabled}, "
+        f"purpose: {context.request_purpose})"
+    )
